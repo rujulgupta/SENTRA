@@ -1,0 +1,10 @@
+{
+  "description": "Helps security teams organize scanner findings, review evidence-based explanations, prioritize remediation, and track vulnerabilities through human review.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
