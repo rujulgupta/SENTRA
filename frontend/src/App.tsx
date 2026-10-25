@@ -105,6 +105,11 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     check: <path d="m5 12 4 4L19 6"/>,
     trend: <path d="m3 17 6-6 4 4 8-9m-5 0h5v5"/>,
     external: <path d="M14 3h7v7m0-7-9 9M19 13v7H4V5h7"/>,
+    eye: <><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></>,
+    eyeOff: <><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></>,
+    user: <><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
+    mail: <><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></>,
+    lock: <><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></>,
   };
   return <svg className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
@@ -834,14 +839,74 @@ function GenericPage({ name, start }: { name: string; start: () => void }) {
   </>;
 }
 
-type AuthScreen = "signin" | "create" | "forgot" | "reset" | "confirm";
+type AuthScreen = "signin" | "create" | "forgot" | "reset" | "confirm" | "signup-success";
 
-function PasswordField({ label, name, value, onChange, error, placeholder = "Enter your password" }: { label: string; name: string; value: string; onChange: (value: string) => void; error?: string; placeholder?: string }) {
+function PasswordField({
+  label,
+  name,
+  value,
+  onChange,
+  error,
+  placeholder = "Enter your password",
+  autoComplete
+}: {
+  label: string;
+  name: string;
+  value: string;
+  onChange: (value: string) => void;
+  error?: string;
+  placeholder?: string;
+  autoComplete?: string;
+}) {
   const [visible, setVisible] = useState(false);
-  return <label className={`auth-field ${error ? "has-error" : ""}`}><span>{label}</span><div><input name={name} type={visible ? "text" : "password"} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} autoComplete={name === "password" ? "current-password" : "new-password"}/><button type="button" onClick={() => setVisible(!visible)} aria-label={visible ? "Hide password" : "Show password"}>{visible ? "Hide" : "Show"}</button></div>{error && <small><Icon name="alert" size={12}/>{error}</small>}</label>;
+  return (
+    <label className={`auth-field ${error ? "has-error" : ""}`}>
+      <span className="auth-field-label">
+        <span>{label}</span>
+      </span>
+      <div className="auth-input-wrapper">
+        <span className="auth-input-icon">
+          <Icon name="lock" size={15} />
+        </span>
+        <input
+          id={name}
+          name={name}
+          type={visible ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          autoComplete={autoComplete || (name.includes("confirm") ? "new-password" : "current-password")}
+          aria-invalid={!!error}
+        />
+        <button
+          type="button"
+          className="password-toggle-btn"
+          onClick={() => setVisible(!visible)}
+          aria-label={visible ? "Hide password" : "Show password"}
+          title={visible ? "Hide password" : "Show password"}
+        >
+          <Icon name={visible ? "eyeOff" : "eye"} size={16} />
+        </button>
+      </div>
+      {error && (
+        <span className="auth-field-error" role="alert">
+          <Icon name="alert" size={12} />
+          {error}
+        </span>
+      )}
+    </label>
+  );
 }
 
-function AuthExperience({ signIn, initialScreen = "signin" }: { signIn: () => void; initialScreen?: AuthScreen }) {
+function AuthExperience({
+  signIn,
+  initialScreen = "signin",
+  onNavigateScreen
+}: {
+  signIn: () => void;
+  initialScreen?: AuthScreen;
+  onNavigateScreen?: (screen: AuthScreen) => void;
+}) {
   const [screen, setScreen] = useState<AuthScreen>(initialScreen);
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("elena@arcadian.example");
@@ -850,63 +915,865 @@ function AuthExperience({ signIn, initialScreen = "signin" }: { signIn: () => vo
   const [confirmPassword, setConfirmPassword] = useState("");
   const [remember, setRemember] = useState(false);
   const [agreed, setAgreed] = useState(false);
-  const [errors, setErrors] = useState<Record<string,string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
-  const validEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  const [registeredEmail, setRegisteredEmail] = useState("");
+
+  useEffect(() => {
+    setScreen(initialScreen);
+  }, [initialScreen]);
+
+  const validEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
   const validPassword = (value: string) => value.length >= 8 && /[A-Z]/.test(value) && /\d/.test(value);
-  const go = (next: AuthScreen) => { setScreen(next); setErrors({}); setMessage(""); setPassword(""); setConfirmPassword(""); };
-  const finishLoading = (callback: () => void) => { setLoading(true); setTimeout(() => {setLoading(false);callback();},700); };
-  const submitSignIn = (event: React.FormEvent) => { event.preventDefault(); const next: Record<string,string> = {}; if (!email) next.email = "Enter your email address."; else if (!validEmail(email)) next.email = "Enter a valid email address."; if (!password) next.password = "Enter your password."; setErrors(next); if (!Object.keys(next).length) finishLoading(signIn); };
-  const submitCreate = (event: React.FormEvent) => { event.preventDefault(); const next: Record<string,string> = {}; if (name.trim().length < 2) next.name = "Enter your full name."; if (!email) next.email = "Enter your work or student email."; else if (!validEmail(email)) next.email = "Enter a valid email address."; if (!validPassword(password)) next.password = "Use 8+ characters with an uppercase letter and number."; if (confirmPassword !== password) next.confirm = "Passwords do not match."; if (!agreed) next.agreed = "Accept the terms and privacy notice to continue."; setErrors(next); if (!Object.keys(next).length) finishLoading(() => go("confirm")); };
-  const submitForgot = (event: React.FormEvent) => { event.preventDefault(); const next: Record<string,string> = {}; if (!email || !validEmail(email)) next.email = "Enter a valid email address."; setErrors(next); if (!Object.keys(next).length) finishLoading(() => setMessage("sent")); };
-  const submitReset = (event: React.FormEvent) => { event.preventDefault(); const next: Record<string,string> = {}; if (!validPassword(password)) next.password = "Use 8+ characters with an uppercase letter and number."; if (confirmPassword !== password) next.confirm = "Passwords do not match."; setErrors(next); if (!Object.keys(next).length) finishLoading(() => setMessage("updated")); };
-  const title = screen === "signin" ? "Welcome back." : screen === "create" ? "Join a clearer security workflow." : screen === "forgot" ? "Recover access calmly." : screen === "reset" ? "Choose a stronger password." : "One final step.";
-  return <div className="auth-page">
-    <aside className="auth-story"><div className="auth-brand"><span className="auth-shield"><Icon name="shield" size={22}/></span><div><strong>SENTRA</strong><small>Security clarity for safer systems</small></div></div><div className="auth-story-copy"><p className="eyebrow">Evidence-driven security assessment</p><h1>{title}</h1><p>Understand your security findings. Focus on what matters.</p></div><div className="auth-evidence"><div><span>Evidence</span><i/><small>Preserve original scanner context</small></div><div><span>Interpretation</span><i/><small>Make uncertainty visible</small></div><div><span>Human review</span><i/><small>Keep decisions accountable</small></div></div><p className="auth-safety"><Icon name="shield" size={13}/>Only assess systems you own or are authorized to test.</p></aside>
-    <main className="auth-main"><section className="auth-card">
-      {screen === "signin" && <><div className="auth-heading"><p className="eyebrow">Arcadian Systems workspace</p><h2>Sign in to SENTRA</h2><p>Use the illustrative account details below to enter the prototype.</p></div><form onSubmit={submitSignIn} noValidate><label className={`auth-field ${errors.email ? "has-error" : ""}`}><span>Email address</span><input type="email" value={email} onChange={(e) => {setEmail(e.target.value);setErrors({...errors,email:""});}} placeholder="name@organization.com" autoComplete="email"/>{errors.email && <small><Icon name="alert" size={12}/>{errors.email}</small>}</label><PasswordField label="Password" name="password" value={password} onChange={(value) => {setPassword(value);setErrors({...errors,password:""});}} error={errors.password}/><div className="auth-options"><label><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}/><span/>Remember me on this device</label><button type="button" onClick={() => go("forgot")}>Forgot password?</button></div><button className="auth-submit" disabled={loading}>{loading ? <><span className="button-spinner"/>Signing in…</> : "Sign In"}</button></form><div className="auth-divider"><span>New to SENTRA?</span></div><button className="auth-secondary" onClick={() => go("create")}>Create an account</button></>}
-      {screen === "create" && <><div className="auth-heading"><p className="eyebrow">Start with a prototype account</p><h2>Create your account</h2><p>Set up an illustrative profile for the SENTRA workspace.</p></div><form onSubmit={submitCreate} noValidate><label className={`auth-field ${errors.name ? "has-error" : ""}`}><span>Full name</span><input value={name} onChange={(e) => {setName(e.target.value);setErrors({...errors,name:""});}} placeholder="Your full name"/>{errors.name && <small><Icon name="alert" size={12}/>{errors.name}</small>}</label><label className={`auth-field ${errors.email ? "has-error" : ""}`}><span>Work or student email</span><input type="email" value={email} onChange={(e) => {setEmail(e.target.value);setErrors({...errors,email:""});}} placeholder="name@organization.com"/>{errors.email && <small><Icon name="alert" size={12}/>{errors.email}</small>}</label><PasswordField label="Password" name="new-password" value={password} onChange={(value) => {setPassword(value);setErrors({...errors,password:""});}} error={errors.password} placeholder="Create a password"/><div className="password-requirements"><span className={password.length >= 8 ? "met" : ""}>8+ characters</span><span className={/[A-Z]/.test(password) ? "met" : ""}>Uppercase letter</span><span className={/\d/.test(password) ? "met" : ""}>Number</span></div><PasswordField label="Confirm password" name="confirm-password" value={confirmPassword} onChange={(value) => {setConfirmPassword(value);setErrors({...errors,confirm:""});}} error={errors.confirm} placeholder="Repeat your password"/><label className={`agreement ${errors.agreed ? "has-error" : ""}`}><input type="checkbox" checked={agreed} onChange={(e) => {setAgreed(e.target.checked);setErrors({...errors,agreed:""});}}/><span/>I agree to the illustrative Terms of Use and Privacy Notice.</label>{errors.agreed && <p className="agreement-error"><Icon name="alert" size={12}/>{errors.agreed}</p>}<button className="auth-submit" disabled={loading}>{loading ? <><span className="button-spinner"/>Creating account…</> : "Create Account"}</button></form><button className="auth-text-link" onClick={() => go("signin")}>Already have an account? <strong>Sign in</strong></button></>}
-      {screen === "forgot" && (message === "sent" ? <AuthSuccess icon="file" title="Check your email" copy="If an account is associated with that address, reset instructions would be sent. This message does not confirm whether an account exists." action="Open reset prototype" onAction={() => go("reset")} secondary="Return to Sign In" onSecondary={() => go("signin")}/> : <><div className="auth-heading"><p className="eyebrow">Account recovery</p><h2>Forgot your password?</h2><p>Enter the email address associated with your account.</p></div><form onSubmit={submitForgot} noValidate><label className={`auth-field ${errors.email ? "has-error" : ""}`}><span>Email address</span><input type="email" value={email} onChange={(e) => {setEmail(e.target.value);setErrors({});}} placeholder="name@organization.com"/>{errors.email && <small><Icon name="alert" size={12}/>{errors.email}</small>}</label><button className="auth-submit" disabled={loading}>{loading ? <><span className="button-spinner"/>Preparing instructions…</> : "Send Reset Instructions"}</button></form><button className="auth-text-link" onClick={() => go("signin")}><span className="back-arrow"><Icon name="arrow" size={13}/></span>Back to Sign In</button></>)}
-      {screen === "reset" && (message === "updated" ? <AuthSuccess icon="check" title="Password updated" copy="Your password was updated in this frontend simulation. No production credential or server record was changed." action="Return to Sign In" onAction={() => go("signin")}/> : <><div className="auth-heading"><p className="eyebrow">Reset password</p><h2>Create a new password</h2><p>Choose a password that meets all requirements below.</p></div><form onSubmit={submitReset} noValidate><PasswordField label="New password" name="new-password" value={password} onChange={(value) => {setPassword(value);setErrors({...errors,password:""});}} error={errors.password}/><div className="password-requirements"><span className={password.length >= 8 ? "met" : ""}>8+ characters</span><span className={/[A-Z]/.test(password) ? "met" : ""}>Uppercase letter</span><span className={/\d/.test(password) ? "met" : ""}>Number</span></div><PasswordField label="Confirm new password" name="confirm-password" value={confirmPassword} onChange={(value) => {setConfirmPassword(value);setErrors({...errors,confirm:""});}} error={errors.confirm}/><button className="auth-submit" disabled={loading}>{loading ? <><span className="button-spinner"/>Updating password…</> : "Update Password"}</button></form><button className="auth-text-link" onClick={() => go("signin")}>Cancel and return to Sign In</button></>)}
-      {screen === "confirm" && <AuthSuccess icon="file" title="Check your inbox" copy="A confirmation link would be sent to your email address. Open it to complete account setup. No email is sent in this frontend prototype." action={message === "resent" ? "Confirmation resent" : "Resend confirmation"} onAction={() => setMessage("resent")} secondary="Return to Sign In" onSecondary={() => go("signin")}/>} 
-      <p className="auth-prototype"><Icon name="alert" size={12}/>Authentication is simulated. SENTRA does not store these passwords or send emails.</p>
-    </section></main>
-  </div>;
+
+  const go = (next: AuthScreen) => {
+    setScreen(next);
+    setErrors({});
+    setMessage("");
+    if (next === "signin" || next === "create") {
+      setPassword("");
+      setConfirmPassword("");
+    }
+    if (onNavigateScreen) onNavigateScreen(next);
+    if (next === "signin") {
+      window.location.hash = "#signin";
+    } else if (next === "create") {
+      window.location.hash = "#signup";
+    } else if (next === "forgot") {
+      window.location.hash = "#forgot";
+    }
+  };
+
+  const finishLoading = (callback: () => void) => {
+    setLoading(true);
+    setTimeout(() => {
+      setLoading(false);
+      callback();
+    }, 600);
+  };
+
+  const submitSignIn = (event: React.FormEvent) => {
+    event.preventDefault();
+    const next: Record<string, string> = {};
+    if (!email.trim()) next.email = "Enter your email address.";
+    else if (!validEmail(email)) next.email = "Enter a valid email address.";
+    if (!password) next.password = "Enter your password.";
+    setErrors(next);
+    if (!Object.keys(next).length) {
+      finishLoading(() => {
+        signIn();
+      });
+    }
+  };
+
+  const submitCreate = (event: React.FormEvent) => {
+    event.preventDefault();
+    const next: Record<string, string> = {};
+    if (name.trim().length < 2) next.name = "Enter your full name.";
+    if (!email.trim()) next.email = "Enter your work or student email.";
+    else if (!validEmail(email)) next.email = "Enter a valid email address.";
+    if (!validPassword(password)) next.password = "Password must be at least 8 characters with 1 uppercase letter and 1 number.";
+    if (confirmPassword !== password) next.confirm = "Passwords do not match.";
+    if (!agreed) next.agreed = "You must agree to the Terms of Service to proceed.";
+    setErrors(next);
+    if (!Object.keys(next).length) {
+      finishLoading(() => {
+        setRegisteredEmail(email.trim());
+        setScreen("signup-success");
+      });
+    }
+  };
+
+  const submitForgot = (event: React.FormEvent) => {
+    event.preventDefault();
+    const next: Record<string, string> = {};
+    if (!email.trim() || !validEmail(email)) next.email = "Enter a valid email address.";
+    setErrors(next);
+    if (!Object.keys(next).length) {
+      finishLoading(() => setMessage("sent"));
+    }
+  };
+
+  return (
+    <div className="auth-page">
+      <aside className="auth-story">
+        <div>
+          <div className="auth-brand">
+            <span className="auth-shield">
+              <Icon name="shield" size={22} />
+            </span>
+            <div>
+              <strong>SENTRA</strong>
+              <small>Security clarity for safer systems</small>
+            </div>
+          </div>
+
+          <div className="auth-story-copy">
+            <p className="eyebrow">Evidence-driven security assessment</p>
+            <h1>
+              {screen === "signin"
+                ? "Security clarity for modern infrastructure."
+                : screen === "create"
+                ? "Join a clearer security workflow."
+                : screen === "signup-success"
+                ? "Workspace ready for review."
+                : "Recover workspace access."}
+            </h1>
+            <p>
+              Review findings with contextual evidence, understand true risk, and prioritize remediation with confidence.
+            </p>
+          </div>
+
+          <div className="auth-about-card">
+            <div className="auth-about-header">
+              <Icon name="shield" size={17} />
+              <h3>About SENTRA</h3>
+            </div>
+            <p>
+              SENTRA is an AI-assisted penetration testing and vulnerability assessment platform designed to help security teams organize findings, understand risk, and prioritize remediation.
+            </p>
+            <div className="auth-features-list">
+              <div className="auth-feature-item">
+                <span className="auth-feature-icon">
+                  <Icon name="file" size={16} />
+                </span>
+                <div>
+                  <strong>Centralized Findings</strong>
+                  <p>Import and review security findings in one workspace.</p>
+                </div>
+              </div>
+              <div className="auth-feature-item">
+                <span className="auth-feature-icon">
+                  <Icon name="alert" size={16} />
+                </span>
+                <div>
+                  <strong>Risk Visibility</strong>
+                  <p>Understand vulnerability severity and prioritize critical issues.</p>
+                </div>
+              </div>
+              <div className="auth-feature-item">
+                <span className="auth-feature-icon">
+                  <Icon name="sparkles" size={16} />
+                </span>
+                <div>
+                  <strong>Smarter Remediation</strong>
+                  <p>Work toward clearer remediation decisions with AI-assisted analysis as the platform evolves.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="auth-security-badges">
+            <span><Icon name="check" size={12} /> Strict scope control</span>
+            <span><Icon name="lock" size={12} /> Analyst-in-the-loop</span>
+            <span><Icon name="shield" size={12} /> Non-destructive testing</span>
+          </div>
+        </div>
+
+        <p className="auth-safety">
+          <Icon name="shield" size={13} /> Only assess systems you own or are authorized to test.
+        </p>
+      </aside>
+
+      <main className="auth-main">
+        <section className="auth-card">
+          <div className="auth-card-top">
+            <div className="auth-brand">
+              <span className="auth-shield">
+                <Icon name="shield" size={16} />
+              </span>
+              <strong>SENTRA</strong>
+            </div>
+            <span className="auth-tag">Security Platform</span>
+          </div>
+
+          {screen === "signin" && (
+            <>
+              <div className="auth-heading">
+                <h2>Welcome back to SENTRA</h2>
+                <p>Sign in to access your security assessment workspace and manage your findings.</p>
+              </div>
+
+              <button
+                type="button"
+                className="auth-demo-shortcut"
+                onClick={() => {
+                  setEmail("elena@arcadian.example");
+                  setPassword("Sentra2025!");
+                  setErrors({});
+                }}
+                title="Fill sample analyst credentials for quick demonstration"
+              >
+                <div>
+                  <strong>Quick-fill Demo Analyst</strong>
+                  <span>Elena Marlow · elena@arcadian.example</span>
+                </div>
+                <span className="demo-pill">Fill demo</span>
+              </button>
+
+              <form onSubmit={submitSignIn} noValidate>
+                <label className={`auth-field ${errors.email ? "has-error" : ""}`}>
+                  <span className="auth-field-label">
+                    <span>Email address</span>
+                  </span>
+                  <div className="auth-input-wrapper">
+                    <span className="auth-input-icon">
+                      <Icon name="mail" size={15} />
+                    </span>
+                    <input
+                      id="signin-email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setErrors({ ...errors, email: "" });
+                      }}
+                      placeholder="name@organization.com"
+                      autoComplete="email"
+                      aria-invalid={!!errors.email}
+                    />
+                  </div>
+                  {errors.email && (
+                    <span className="auth-field-error" role="alert">
+                      <Icon name="alert" size={12} />
+                      {errors.email}
+                    </span>
+                  )}
+                </label>
+
+                <PasswordField
+                  label="Password"
+                  name="signin-password"
+                  value={password}
+                  onChange={(val) => {
+                    setPassword(val);
+                    setErrors({ ...errors, password: "" });
+                  }}
+                  error={errors.password}
+                  placeholder="Enter your password"
+                />
+
+                <div className="auth-options">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={remember}
+                      onChange={(e) => setRemember(e.target.checked)}
+                    />
+                    <span>Remember me on this device</span>
+                  </label>
+                  <button
+                    type="button"
+                    className="auth-forgot-btn"
+                    onClick={() => go("forgot")}
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+
+                <button type="submit" className="auth-submit" disabled={loading}>
+                  {loading ? (
+                    <>
+                      <span className="button-spinner" />
+                      Signing in…
+                    </>
+                  ) : (
+                    "Sign In"
+                  )}
+                </button>
+              </form>
+
+              <div className="auth-switch-box">
+                Don't have an account?{" "}
+                <button
+                  type="button"
+                  className="auth-switch-link"
+                  onClick={() => go("create")}
+                >
+                  Sign up
+                </button>
+              </div>
+
+              <div className="auth-demo-badge">
+                <Icon name="alert" size={13} />
+                <div>
+                  <strong>Client-side Prototype:</strong> Real backend authentication is not yet connected. Password values are not transmitted or stored.
+                </div>
+              </div>
+            </>
+          )}
+
+          {screen === "create" && (
+            <>
+              <div className="auth-heading">
+                <h2>Create your SENTRA account</h2>
+                <p>Get started with a centralized workspace to review vulnerabilities, assess security findings, and track remediation.</p>
+              </div>
+
+              <form onSubmit={submitCreate} noValidate>
+                <label className={`auth-field ${errors.name ? "has-error" : ""}`}>
+                  <span className="auth-field-label">
+                    <span>Full name</span>
+                  </span>
+                  <div className="auth-input-wrapper">
+                    <span className="auth-input-icon">
+                      <Icon name="user" size={15} />
+                    </span>
+                    <input
+                      id="signup-name"
+                      type="text"
+                      value={name}
+                      onChange={(e) => {
+                        setName(e.target.value);
+                        setErrors({ ...errors, name: "" });
+                      }}
+                      placeholder="Elena Marlow"
+                      autoComplete="name"
+                      aria-invalid={!!errors.name}
+                    />
+                  </div>
+                  {errors.name && (
+                    <span className="auth-field-error" role="alert">
+                      <Icon name="alert" size={12} />
+                      {errors.name}
+                    </span>
+                  )}
+                </label>
+
+                <label className={`auth-field ${errors.email ? "has-error" : ""}`}>
+                  <span className="auth-field-label">
+                    <span>Work or student email</span>
+                  </span>
+                  <div className="auth-input-wrapper">
+                    <span className="auth-input-icon">
+                      <Icon name="mail" size={15} />
+                    </span>
+                    <input
+                      id="signup-email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setErrors({ ...errors, email: "" });
+                      }}
+                      placeholder="name@organization.com"
+                      autoComplete="email"
+                      aria-invalid={!!errors.email}
+                    />
+                  </div>
+                  {errors.email && (
+                    <span className="auth-field-error" role="alert">
+                      <Icon name="alert" size={12} />
+                      {errors.email}
+                    </span>
+                  )}
+                </label>
+
+                <PasswordField
+                  label="Password"
+                  name="signup-password"
+                  value={password}
+                  onChange={(val) => {
+                    setPassword(val);
+                    setErrors({ ...errors, password: "" });
+                  }}
+                  error={errors.password}
+                  placeholder="Create a strong password"
+                />
+
+                <div className="password-requirements" aria-label="Password requirements">
+                  <span className={password.length >= 8 ? "met" : ""}>8+ characters</span>
+                  <span className={/[A-Z]/.test(password) ? "met" : ""}>Uppercase letter</span>
+                  <span className={/\d/.test(password) ? "met" : ""}>Number</span>
+                  <span className={confirmPassword && password === confirmPassword ? "met" : ""}>Passwords match</span>
+                </div>
+
+                <PasswordField
+                  label="Confirm password"
+                  name="signup-confirm-password"
+                  value={confirmPassword}
+                  onChange={(val) => {
+                    setConfirmPassword(val);
+                    setErrors({ ...errors, confirm: "" });
+                  }}
+                  error={errors.confirm}
+                  placeholder="Repeat your password"
+                />
+
+                <label className={`agreement ${errors.agreed ? "has-error" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={agreed}
+                    onChange={(e) => {
+                      setAgreed(e.target.checked);
+                      setErrors({ ...errors, agreed: "" });
+                    }}
+                  />
+                  <span>I agree to the illustrative Terms of Service and authorized security testing guidelines.</span>
+                </label>
+                {errors.agreed && (
+                  <span className="agreement-error" role="alert">
+                    <Icon name="alert" size={12} />
+                    {errors.agreed}
+                  </span>
+                )}
+
+                <button type="submit" className="auth-submit" style={{ marginTop: "18px" }} disabled={loading}>
+                  {loading ? (
+                    <>
+                      <span className="button-spinner" />
+                      Creating account…
+                    </>
+                  ) : (
+                    "Create Account"
+                  )}
+                </button>
+              </form>
+
+              <div className="auth-switch-box">
+                Already have an account?{" "}
+                <button
+                  type="button"
+                  className="auth-switch-link"
+                  onClick={() => go("signin")}
+                >
+                  Sign in
+                </button>
+              </div>
+
+              <div className="auth-demo-badge">
+                <Icon name="alert" size={13} />
+                <div>
+                  <strong>Client-side Prototype:</strong> Submitting this form demonstrates validation and flow. Real account storage will require backend integration.
+                </div>
+              </div>
+            </>
+          )}
+
+          {screen === "signup-success" && (
+            <div className="auth-success-screen">
+              <div className="success-icon-wrap">
+                <Icon name="check" size={28} />
+              </div>
+              <p className="eyebrow">Account registered</p>
+              <h2>Account created successfully</h2>
+              <p>
+                Welcome to SENTRA, <strong>{name || "Security Analyst"}</strong>! Your demo workspace profile has been registered for this session.
+              </p>
+              <div className="success-meta-card">
+                <strong>Registered Email:</strong>
+                <span>{registeredEmail || email}</span>
+              </div>
+              <button
+                type="button"
+                className="auth-submit"
+                onClick={() => {
+                  setEmail(registeredEmail || email);
+                  setPassword("");
+                  go("signin");
+                }}
+              >
+                Continue to Sign In
+              </button>
+              <div className="auth-switch-box">
+                Ready now?{" "}
+                <button
+                  type="button"
+                  className="auth-switch-link"
+                  onClick={() => {
+                    setEmail(registeredEmail || email);
+                    setPassword("");
+                    go("signin");
+                  }}
+                >
+                  Sign in to workspace
+                </button>
+              </div>
+            </div>
+          )}
+
+          {screen === "forgot" && (
+            message === "sent" ? (
+              <AuthSuccess
+                icon="file"
+                title="Check your email"
+                copy="If an account is associated with that address, reset instructions would be sent. In this demo environment, no external email is sent."
+                action="Return to Sign In"
+                onAction={() => go("signin")}
+              />
+            ) : (
+              <>
+                <div className="auth-heading">
+                  <p className="eyebrow">Account recovery</p>
+                  <h2>Forgot your password?</h2>
+                  <p>Enter the email address associated with your account to receive recovery instructions.</p>
+                </div>
+                <form onSubmit={submitForgot} noValidate>
+                  <label className={`auth-field ${errors.email ? "has-error" : ""}`}>
+                    <span className="auth-field-label">
+                      <span>Email address</span>
+                    </span>
+                    <div className="auth-input-wrapper">
+                      <span className="auth-input-icon">
+                        <Icon name="mail" size={15} />
+                      </span>
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                          setErrors({});
+                        }}
+                        placeholder="name@organization.com"
+                      />
+                    </div>
+                    {errors.email && (
+                      <span className="auth-field-error" role="alert">
+                        <Icon name="alert" size={12} />
+                        {errors.email}
+                      </span>
+                    )}
+                  </label>
+                  <button type="submit" className="auth-submit" style={{ marginTop: "18px" }} disabled={loading}>
+                    {loading ? (
+                      <>
+                        <span className="button-spinner" />
+                        Preparing instructions…
+                      </>
+                    ) : (
+                      "Send Reset Instructions"
+                    )}
+                  </button>
+                </form>
+                <div className="auth-switch-box">
+                  Remembered your password?{" "}
+                  <button
+                    type="button"
+                    className="auth-switch-link"
+                    onClick={() => go("signin")}
+                  >
+                    Back to Sign In
+                  </button>
+                </div>
+              </>
+            )
+          )}
+        </section>
+      </main>
+    </div>
+  );
 }
 
-function AuthSuccess({ icon, title, copy, action, onAction, secondary, onSecondary }: { icon: string; title: string; copy: string; action: string; onAction: () => void; secondary?: string; onSecondary?: () => void }) {
-  return <div className="auth-success"><span><Icon name={icon} size={24}/></span><p className="eyebrow">Request complete</p><h2>{title}</h2><p>{copy}</p><button className="auth-submit" onClick={onAction}>{action}</button>{secondary && <button className="auth-text-link" onClick={onSecondary}>{secondary}</button>}</div>;
+function AuthSuccess({
+  icon,
+  title,
+  copy,
+  action,
+  onAction,
+  secondary,
+  onSecondary
+}: {
+  icon: string;
+  title: string;
+  copy: string;
+  action: string;
+  onAction: () => void;
+  secondary?: string;
+  onSecondary?: () => void;
+}) {
+  return (
+    <div className="auth-success-screen">
+      <div className="success-icon-wrap">
+        <Icon name={icon} size={28} />
+      </div>
+      <p className="eyebrow">Request complete</p>
+      <h2>{title}</h2>
+      <p>{copy}</p>
+      <button className="auth-submit" onClick={onAction}>
+        {action}
+      </button>
+      {secondary && (
+        <button
+          className="auth-text-link"
+          style={{ marginTop: "12px", border: 0, background: "transparent", color: "var(--brown)", cursor: "pointer", textDecoration: "underline" }}
+          onClick={onSecondary}
+        >
+          {secondary}
+        </button>
+      )}
+    </div>
+  );
 }
 
 export default function App() {
+  const getInitialScreen = (): AuthScreen => {
+    if (typeof window !== "undefined") {
+      const hash = window.location.hash.toLowerCase();
+      if (hash === "#signup" || hash === "#register" || hash === "#create") return "create";
+      if (hash === "#forgot") return "forgot";
+    }
+    return "signin";
+  };
+
   const [active, setActive] = useState("Dashboard");
   const [menu, setMenu] = useState(false);
   const [toast, setToast] = useState(false);
-  const [loggedIn, setLoggedIn] = useState(true);
-  const [authScreen, setAuthScreen] = useState<AuthScreen>("signin");
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [authScreen, setAuthScreen] = useState<AuthScreen>(getInitialScreen);
   const [workspace, setWorkspace] = useState("Arcadian Systems");
-  const [workspaces, setWorkspaces] = useState(["Arcadian Systems","Northstar Labs","Student Security Lab"]);
-  const [findingsData, setFindingsData] = useState<typeof explorerFindings>(() => { try { const saved=localStorage.getItem("sentra-local-findings"); return saved ? JSON.parse(saved) : explorerFindings; } catch { return explorerFindings; } });
-  const [assessmentsData, setAssessmentsData] = useState<typeof assessmentHistory>(() => { try { const saved=localStorage.getItem("sentra-local-assessments"); if (!saved) return assessmentHistory; return JSON.parse(saved).map((item: Record<string,unknown>) => ({medium:0,low:0,informational:0,source:"Legacy local record",findingIds:[],...item})); } catch { return assessmentHistory; } });
+  const [workspaces, setWorkspaces] = useState(["Arcadian Systems", "Northstar Labs", "Student Security Lab"]);
+  const [findingsData, setFindingsData] = useState<typeof explorerFindings>(() => {
+    try {
+      const saved = localStorage.getItem("sentra-local-findings");
+      return saved ? JSON.parse(saved) : explorerFindings;
+    } catch {
+      return explorerFindings;
+    }
+  });
+  const [assessmentsData, setAssessmentsData] = useState<typeof assessmentHistory>(() => {
+    try {
+      const saved = localStorage.getItem("sentra-local-assessments");
+      if (!saved) return assessmentHistory;
+      return JSON.parse(saved).map((item: Record<string, unknown>) => ({
+        medium: 0,
+        low: 0,
+        informational: 0,
+        source: "Legacy local record",
+        findingIds: [],
+        ...item
+      }));
+    } catch {
+      return assessmentHistory;
+    }
+  });
   const [selectedFinding, setSelectedFinding] = useState(findingsData[0] || explorerFindings[0]);
   const [selectedAsset, setSelectedAsset] = useState(assetInventory[0]);
   const [remediationRecords, setRemediationRecords] = useState(initialRemediationRecords);
   const [selectedRemediationId, setSelectedRemediationId] = useState<string | null>(null);
-  const complete = () => { setActive("Scan Progress"); setToast(true); setTimeout(() => setToast(false), 3200); };
-  useEffect(() => { localStorage.setItem("sentra-local-findings",JSON.stringify(findingsData)); },[findingsData]);
-  useEffect(() => { localStorage.setItem("sentra-local-assessments",JSON.stringify(assessmentsData)); },[assessmentsData]);
-  const importRecords = (imported: typeof explorerFindings, fileName: string, format: string) => {
-    setFindingsData((current) => [...imported,...current]);
-    const count = (severity: string) => imported.filter((item) => item.severity === severity).length;
-    const targets=[...new Set(imported.map((item)=>item.asset.split(":")[0]))];
-    const batchId=`IMP-${Date.now()}`;
-    setAssessmentsData((current) => [{id:batchId,name:`Imported findings — ${fileName}`,target:targets.length===1?targets[0]:`${targets.length} imported assets`,date:new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}),findings:imported.length,critical:count("Critical"),high:count("High"),medium:count("Medium"),low:count("Low"),informational:count("Informational"),status:"Imported",source:`Imported ${format}`,report:false,scope:"Imported scanner findings · local prototype",findingIds:imported.map((item)=>item.id)},...current]);
+
+  const complete = () => {
+    setActive("Scan Progress");
+    setToast(true);
+    setTimeout(() => setToast(false), 3200);
   };
-  if (!loggedIn) return <AuthExperience initialScreen={authScreen} signIn={() => {setLoggedIn(true);setAuthScreen("signin");setActive("Dashboard");}}/>;
-  return <div className="app-shell">
-    <Sidebar active={active} setActive={setActive} open={menu} close={() => setMenu(false)} workspace={workspace} workspaces={workspaces} selectWorkspace={setWorkspace} addWorkspace={(name) => {setWorkspaces([...workspaces,name]);setWorkspace(name);}} />
-    {menu && <button className="scrim" onClick={() => setMenu(false)} aria-label="Close navigation" />}
-    <div className="main-shell"><Header onMenu={() => setMenu(true)} active={active} navigate={setActive} workspace={workspace} logout={(screen = "signin") => {setAuthScreen(screen);setLoggedIn(false);}}/><main>{active === "Dashboard" ? <Dashboard start={() => setActive("New Assessment")} navigate={setActive} openFinding={(finding) => {setSelectedFinding(finding);setActive("Finding Details");}} openAsset={(asset) => {setSelectedAsset(asset);setActive("Asset Details");}} remediationRecords={remediationRecords} openRemediation={(findingId) => {setSelectedRemediationId(findingId);setActive("Remediation");}}/> : active === "Asset Inventory" ? <AssetInventoryPage openAsset={(asset) => {setSelectedAsset(asset);setActive("Asset Details");}}/> : active === "Asset Details" ? <AssetDetailsPage asset={selectedAsset} back={() => setActive("Asset Inventory")} openFinding={(finding) => {setSelectedFinding(finding);setActive("Finding Details");}}/> : active === "Remediation" ? <RemediationPage records={remediationRecords} initialFindingId={selectedRemediationId} updateRecord={(updated) => setRemediationRecords(remediationRecords.map((record) => record.findingId === updated.findingId ? updated : record))}/> : active === "New Assessment" ? <NewAssessment cancel={() => setActive("Assessments")} complete={complete}/> : active === "Scan Progress" ? <ScanProgress navigate={setActive}/> : active === "Findings" ? <FindingsExplorer findingsData={findingsData} remediationRecords={remediationRecords} startImport={() => setActive("Import Findings")} openFinding={(finding) => { setSelectedFinding(finding); setActive("Finding Details"); }}/> : active === "Finding Details" ? <FindingDetails finding={selectedFinding} back={() => setActive("Findings")}/> : active === "History & Comparison" ? <HistoryComparison assessments={assessmentsData} findingsData={findingsData} navigate={setActive}/> : active === "Reports" ? <ReportsPage/> : active === "Import Findings" ? <ImportFindings existingFindings={findingsData} importRecords={importRecords} viewFindings={() => setActive("Findings")}/> : active === "Settings" || active === "Workspace Settings" ? <SettingsPage key={active} workspace={workspace}/> : <GenericPage name={active} start={() => setActive("New Assessment")} />}</main></div>
-    {toast && <div className="toast"><span><Icon name="check" size={15}/></span><div><strong>Progress prototype opened</strong><small>No real scan has been started.</small></div><button onClick={() => setToast(false)}><Icon name="close" size={15}/></button></div>}
-  </div>;
+
+  useEffect(() => {
+    localStorage.setItem("sentra-local-findings", JSON.stringify(findingsData));
+  }, [findingsData]);
+
+  useEffect(() => {
+    localStorage.setItem("sentra-local-assessments", JSON.stringify(assessmentsData));
+  }, [assessmentsData]);
+
+  // Sync hash changes for authentication views
+  useEffect(() => {
+    const handleHash = () => {
+      const hash = window.location.hash.toLowerCase();
+      if (!loggedIn) {
+        if (hash === "#signup" || hash === "#register" || hash === "#create") {
+          setAuthScreen("create");
+        } else if (hash === "#forgot") {
+          setAuthScreen("forgot");
+        } else {
+          setAuthScreen("signin");
+        }
+      } else {
+        if (hash === "#signin" || hash === "#signup" || hash === "#forgot") {
+          window.location.hash = "#dashboard";
+        }
+      }
+    };
+    window.addEventListener("hashchange", handleHash);
+    return () => window.removeEventListener("hashchange", handleHash);
+  }, [loggedIn]);
+
+  // Update dynamic document title
+  useEffect(() => {
+    if (!loggedIn) {
+      if (authScreen === "create") {
+        document.title = "Create Account | SENTRA Security Platform";
+      } else if (authScreen === "forgot") {
+        document.title = "Reset Password | SENTRA Security Platform";
+      } else {
+        document.title = "Sign In | SENTRA Security Platform";
+      }
+    } else {
+      document.title = `SENTRA | ${active} — ${workspace}`;
+    }
+  }, [loggedIn, authScreen, active, workspace]);
+
+  const importRecords = (imported: typeof explorerFindings, fileName: string, format: string) => {
+    setFindingsData((current) => [...imported, ...current]);
+    const count = (severity: string) => imported.filter((item) => item.severity === severity).length;
+    const targets = [...new Set(imported.map((item) => item.asset.split(":")[0]))];
+    const batchId = `IMP-${Date.now()}`;
+    setAssessmentsData((current) => [
+      {
+        id: batchId,
+        name: `Imported findings — ${fileName}`,
+        target: targets.length === 1 ? targets[0] : `${targets.length} imported assets`,
+        date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+        findings: imported.length,
+        critical: count("Critical"),
+        high: count("High"),
+        medium: count("Medium"),
+        low: count("Low"),
+        informational: count("Informational"),
+        status: "Imported",
+        source: `Imported ${format}`,
+        report: false,
+        scope: "Imported scanner findings · local prototype",
+        findingIds: imported.map((item) => item.id)
+      },
+      ...current
+    ]);
+  };
+
+  const handleSignInSuccess = () => {
+    setLoggedIn(true);
+    setAuthScreen("signin");
+    setActive("Dashboard");
+    window.location.hash = "#dashboard";
+  };
+
+  const handleLogout = (screen: AuthScreen = "signin") => {
+    setAuthScreen(screen);
+    setLoggedIn(false);
+    window.location.hash = screen === "create" ? "#signup" : screen === "forgot" ? "#forgot" : "#signin";
+  };
+
+  if (!loggedIn) {
+    return (
+      <AuthExperience
+        initialScreen={authScreen}
+        signIn={handleSignInSuccess}
+        onNavigateScreen={(scr) => setAuthScreen(scr)}
+      />
+    );
+  }
+
+  return (
+    <div className="app-shell">
+      <Sidebar
+        active={active}
+        setActive={setActive}
+        open={menu}
+        close={() => setMenu(false)}
+        workspace={workspace}
+        workspaces={workspaces}
+        selectWorkspace={setWorkspace}
+        addWorkspace={(name) => {
+          setWorkspaces([...workspaces, name]);
+          setWorkspace(name);
+        }}
+      />
+      {menu && <button className="scrim" onClick={() => setMenu(false)} aria-label="Close navigation" />}
+      <div className="main-shell">
+        <Header
+          onMenu={() => setMenu(true)}
+          active={active}
+          navigate={setActive}
+          workspace={workspace}
+          logout={handleLogout}
+        />
+        <main>
+          {active === "Dashboard" ? (
+            <Dashboard
+              start={() => setActive("New Assessment")}
+              navigate={setActive}
+              openFinding={(finding) => {
+                setSelectedFinding(finding);
+                setActive("Finding Details");
+              }}
+              openAsset={(asset) => {
+                setSelectedAsset(asset);
+                setActive("Asset Details");
+              }}
+              remediationRecords={remediationRecords}
+              openRemediation={(findingId) => {
+                setSelectedRemediationId(findingId);
+                setActive("Remediation");
+              }}
+            />
+          ) : active === "Asset Inventory" ? (
+            <AssetInventoryPage
+              openAsset={(asset) => {
+                setSelectedAsset(asset);
+                setActive("Asset Details");
+              }}
+            />
+          ) : active === "Asset Details" ? (
+            <AssetDetailsPage
+              asset={selectedAsset}
+              back={() => setActive("Asset Inventory")}
+              openFinding={(finding) => {
+                setSelectedFinding(finding);
+                setActive("Finding Details");
+              }}
+            />
+          ) : active === "Remediation" ? (
+            <RemediationPage
+              records={remediationRecords}
+              initialFindingId={selectedRemediationId}
+              updateRecord={(updated) =>
+                setRemediationRecords(
+                  remediationRecords.map((record) =>
+                    record.findingId === updated.findingId ? updated : record
+                  )
+                )
+              }
+            />
+          ) : active === "New Assessment" ? (
+            <NewAssessment cancel={() => setActive("Assessments")} complete={complete} />
+          ) : active === "Scan Progress" ? (
+            <ScanProgress navigate={setActive} />
+          ) : active === "Findings" ? (
+            <FindingsExplorer
+              findingsData={findingsData}
+              remediationRecords={remediationRecords}
+              startImport={() => setActive("Import Findings")}
+              openFinding={(finding) => {
+                setSelectedFinding(finding);
+                setActive("Finding Details");
+              }}
+            />
+          ) : active === "Finding Details" ? (
+            <FindingDetails finding={selectedFinding} back={() => setActive("Findings")} />
+          ) : active === "History & Comparison" ? (
+            <HistoryComparison
+              assessments={assessmentsData}
+              findingsData={findingsData}
+              navigate={setActive}
+            />
+          ) : active === "Reports" ? (
+            <ReportsPage />
+          ) : active === "Import Findings" ? (
+            <ImportFindings
+              existingFindings={findingsData}
+              importRecords={importRecords}
+              viewFindings={() => setActive("Findings")}
+            />
+          ) : active === "Settings" || active === "Workspace Settings" ? (
+            <SettingsPage key={active} workspace={workspace} />
+          ) : (
+            <GenericPage name={active} start={() => setActive("New Assessment")} />
+          )}
+        </main>
+      </div>
+      {toast && (
+        <div className="toast">
+          <span>
+            <Icon name="check" size={15} />
+          </span>
+          <div>
+            <strong>Progress prototype opened</strong>
+            <small>No real scan has been started.</small>
+          </div>
+          <button onClick={() => setToast(false)}>
+            <Icon name="close" size={15} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }

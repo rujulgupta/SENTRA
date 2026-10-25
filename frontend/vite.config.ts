@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import fs from 'node:fs'
 import path from 'node:path'
 
-import siteConfiguration from './.figma/make/site.json'
+import siteConfiguration from './.figma/make/site.json' with { type: 'json' }
 
 
 // Vite config — https://vitejs.dev/config/
@@ -29,22 +29,22 @@ react(),
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src'),
+        '@': path.resolve(import.meta.dirname, './src'),
       },
     },
     server: {
-      host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
-      port: parseInt(process.env.PORT || '8443'),
-      strictPort: true,
+      host: process.env.FIGMA_DEV_SERVER_HOST || 'localhost',
+      port: parseInt(process.env.PORT || '5173'),
+      strictPort: false,
       watch: {
         ignored: [
           '**/.figma/**',
-],
+        ],
       },
     },
     preview: {
-      host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
-      port: parseInt(process.env.PORT || '8443'),
+      host: process.env.FIGMA_DEV_SERVER_HOST || 'localhost',
+      port: parseInt(process.env.PORT || '5173'),
     },
   }
 })
@@ -88,7 +88,7 @@ function figmaSiteConfiguration(config: FigmaSiteConfiguration): Plugin {
     return html.replace(`<!-- ${slotName} -->`, content)
   }
 
-  const title = config.title ?? "Figma Make App"
+  const title = config.title ?? "SENTRA | AI-Powered Security Assessment"
   const description = config.description ?? ''
   // Imported HTML keeps its own favicon; new Makes default to the Make product icon.
   const favicon = config.icons?.icon ?? '/favicon.svg'
@@ -397,9 +397,9 @@ function figmaMakeKitPlugin(options: { storiesGlob: string | string[] }): Plugin
  * path, such as `libraries/<name>/`.
  */
 function figmaLinkedPackageSourcemaps(): Plugin {
-  const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'))
+  const packageJson = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, 'package.json'), 'utf8'))
   const linkedPackages = Object.keys({ ...packageJson.dependencies, ...packageJson.devDependencies }).flatMap((name) => {
-    const installedDir = path.resolve(__dirname, 'node_modules', name)
+    const installedDir = path.resolve(import.meta.dirname, 'node_modules', name)
     try {
       const realDir = fs.realpathSync(installedDir)
       return realDir.split(path.sep).includes('node_modules') ? [] : [{ installedDir, realDir }]
